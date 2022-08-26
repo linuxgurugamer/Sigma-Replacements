@@ -12,24 +12,38 @@ namespace SigmaReplacements
         {
             void Awake()
             {
+                Debug.Log("MenuTriggers.Awake", "Nyan.nyan = " + Nyan.nyan);
+                Debug.Log("MenuTriggers.Awake", "MunSceneInfo.DataBase.Count = " + MunSceneInfo.DataBase?.Count);
+                Debug.Log("MenuTriggers.Awake", "OrbitSceneInfo.DataBase.Count = " + OrbitSceneInfo.DataBase?.Count);
+                if (!Nyan.nyan && MunSceneInfo.DataBase == null && OrbitSceneInfo.DataBase == null) return;
+                if (MunSceneInfo.DataBase.Count == 0 && OrbitSceneInfo.DataBase.Count == 0) return;
+
                 GameObject[] scenes = FindObjectOfType<MainMenu>()?.envLogic?.areas;
 
+                Debug.Log("MenuTriggers.Awake", "scenes = " + scenes?.Length);
                 if (scenes == null) return;
 
                 int i = 1;
                 string hash = DateTime.Now.ToLongTimeString();
                 hash = Math.Abs(hash.GetHashCode()).ToString();
-                i = PseudoRandom.Scene(Math.Abs(hash.GetHashCode()));
 
-                // Choose Scene
-                scenes[i].SetActive(true);
-                scenes[(i + 1) % 2].SetActive(false);
+                i = PseudoRandom.Scene(Math.Abs(hash.GetHashCode()));
+                Debug.Log("MenuTriggers.Awake", "random scene = " + i);
+
 
                 if (Nyan.nyan)
                 {
+                    Debug.Log("MenuTriggers.Awake", "Loading nyan scene");
+
+                    // Activate Scene
+                    scenes[i].SetActive(true);
+                    scenes[(i + 1) % 2].SetActive(false);
+
+                    // Nyan-ify the OrbitScene
                     Renderer mun = scenes[1].GetChild("Mun").GetComponent<Renderer>();
                     mun.material.SetTexture(Nyan.nyanGround);
 
+                    // Nyan-ify the MunScene
                     Terrain terrain = scenes[0].GetChild("Terrain").GetComponent<Terrain>();
                     TerrainLayer[] layers = terrain.terrainData.terrainLayers;
                     layers[0].diffuseTexture = layers[1].diffuseTexture = (Texture2D)Nyan.nyanGround;
@@ -38,33 +52,50 @@ namespace SigmaReplacements
                     return;
                 }
 
-                if (MunSceneInfo.DataBase.Count > 0)
+                // Force Mun Scene
+                if (OrbitSceneInfo.DataBase?.Count == 0)
                 {
-                    if (OrbitSceneInfo.DataBase?.Count == 0)
-                    {
-                        i = 0;
-                    }
+                    i = 0;
                 }
-                else
+
+                // Force Orbit Scene
+                if (MunSceneInfo.DataBase?.Count == 0)
                 {
                     i = 1;
                 }
 
+                // Activate Scene
+                scenes[i].SetActive(true);
+                scenes[(i + 1) % 2].SetActive(false);
+
+                Debug.Log("MenuTriggers.Awake", "chosen scene = " + i);
                 if (i == 0)
                 {
-                    int index = MunSceneInfo.DataBase.Choose(Math.Abs(hash.GetHashCode()));
-                    CustomMunScene scene = new CustomMunScene((MunSceneInfo)MunSceneInfo.DataBase[index]);
-                    scene.ApplyTo(scenes[0]);
+                    Debug.Log("MenuTriggers.Awake", "Loading mun scene");
+
+                    if (MunSceneInfo.DataBase != null)
+                    {
+                        int index = MunSceneInfo.DataBase.Choose(Math.Abs(hash.GetHashCode()));
+                        CustomMunScene scene = new CustomMunScene((MunSceneInfo)MunSceneInfo.DataBase[index]);
+                        scene.ApplyTo(scenes[0]);
+                    }
                 }
-                else if (OrbitSceneInfo.DataBase?.Count > 0)
+                else
                 {
-                    int index = OrbitSceneInfo.DataBase.Choose(Math.Abs(hash.GetHashCode()));
-                    CustomOrbitScene scene = new CustomOrbitScene((OrbitSceneInfo)OrbitSceneInfo.DataBase[index]);
-                    scene.ApplyTo(scenes);
+                    Debug.Log("MenuTriggers.Awake", "Loading orbit scene");
+
+                    if (OrbitSceneInfo.DataBase != null)
+                    {
+                        int index = OrbitSceneInfo.DataBase.Choose(Math.Abs(hash.GetHashCode()));
+                        CustomOrbitScene scene = new CustomOrbitScene((OrbitSceneInfo)OrbitSceneInfo.DataBase[index]);
+                        scene.ApplyTo(scenes);
+                    }
                 }
 
                 if (KopernicusFixer.detect)
                 {
+                    Debug.Log("MenuTriggers.Awake", "Kopernicus has been detected");
+
                     gameObject.AddOrGetComponent<KopernicusFixer>();
                 }
             }

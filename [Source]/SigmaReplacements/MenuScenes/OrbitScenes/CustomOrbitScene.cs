@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -18,6 +19,11 @@ namespace SigmaReplacements
             // Kerbals
             MenuObject[] kerbals = null;
 
+            // Lights
+            MenuLight[] lights = null;
+            static string[] lightNames = null;
+            static Dictionary<string, GameObject> lightTemplates = null;
+
             internal CustomOrbitScene(OrbitSceneInfo info)
             {
                 Debug.Log("CustomOrbitScene", "Custom Orbit Scene name = " + info.name);
@@ -31,19 +37,28 @@ namespace SigmaReplacements
 
                 // Kerbals
                 kerbals = Parse(info.kerbals, kerbals);
+
+                // Lights
+                lights = Parse(info.lights, lights);
             }
 
             internal void ApplyTo(GameObject[] scenes)
             {
+                GameObject scene = scenes[1];
+
                 // Bodies
-                EditPlanet(planet, scenes[1]);
-                EditMoons(moons, scenes[1]);
+                EditPlanet(planet, scene);
+                EditMoons(moons, scene);
 
                 // Scatter
-                AddScatter(scatter, scenes[1], scenes[0].GetChild("sandcastle"));
+                AddScatter(scatter, scene, scenes[0].GetChild("sandcastle"));
 
                 // Kerbals
-                EditKerbals(kerbals, scenes[1]);
+                EditKerbals(kerbals, scene);
+
+                // Lights
+                EditLights(lights, scene);
+                CleanUpLights();
             }
 
             void EditPlanet(MenuObject info, GameObject scene)
@@ -87,9 +102,51 @@ namespace SigmaReplacements
                     // Mesh
                     MeshFilter meshFilter = planet.GetComponent<MeshFilter>();
                     meshFilter.mesh = template?.GetComponent<MeshFilter>()?.mesh ?? meshFilter.mesh;
+
+                    // Coronas
+                    info.AddCoronas(planet, template);
+
+                    // Flare
+                    if (info.brightness != 0 && !Debug.debug)
+                    {
+                        FlareFixer flare = planet.AddComponent<FlareFixer>();
+                        flare.template = cb;
+                        flare.info = info;
+                    }
                 }
 
                 info.ApplyTo(planet, 1.4987610578537f);
+
+                // Add Colliders
+                if (info.addColliders)
+                {
+                    planet.layer = 15;
+                    if (planet.GetComponent<Collider>() == null)
+                    {
+                        MeshCollider collider = planet.AddComponent<MeshCollider>();
+                        collider.isTrigger = true;
+                    }
+                }
+
+                // Add Lights
+                for (int l = 0; l < info.lights?.Length; l++)
+                {
+                    ConfigNode node = info.lights[l];
+
+                    MenuLight menuLight = new MenuLight(node);
+
+                    GameObject lightObj = GetLight(menuLight, scene);
+
+                    if (!lightTemplates.ContainsKey(lightObj.name))
+                    {
+                        lightObj.transform.SetParent(planet.transform);
+                        lightObj.transform.localPosition = Vector3.zero;
+                        lightObj.transform.localRotation = Quaternion.identity;
+                        lightObj.transform.localScale = Vector3.one;
+
+                        menuLight.ApplyTo(lightObj, scene);
+                    }
+                }
             }
 
             void EditMoons(MenuObject[] moons, GameObject scene)
@@ -113,20 +170,20 @@ namespace SigmaReplacements
                     MenuObject info = moons[i];
                     GameObject body;
 
-                    // Clone or Select Stock Body
-                    if (i > 0 && info.enabled)
-                    {
-                        if (string.IsNullOrEmpty(info.name)) continue;
-
-                        body = Instantiate(clone);
-                        body.name = "NewMoon_" + info.name;
-                    }
-                    else if (i == 0)
+                    // Clone or Select Stock Body 
+                    if (info.name == "Mun")
                     {
                         body = mun;
                         body.SetActive(info.enabled);
 
                         if (!info.enabled) continue;
+                    }
+                    else if (info.enabled)
+                    {
+                        if (string.IsNullOrEmpty(info.name)) continue;
+
+                        body = Instantiate(clone);
+                        body.name = "NewMoon_" + info.name;
                     }
                     else
                     {
@@ -151,6 +208,17 @@ namespace SigmaReplacements
                         // Mesh
                         MeshFilter meshFilter = body.GetComponent<MeshFilter>();
                         meshFilter.mesh = template?.GetComponent<MeshFilter>()?.mesh ?? meshFilter.mesh;
+
+                        // Coronas
+                        info.AddCoronas(body, template);
+
+                        // Flare
+                        if (info.brightness != 0 || Debug.debug)
+                        {
+                            FlareFixer flare = body.AddComponent<FlareFixer>();
+                            flare.template = cb;
+                            flare.info = info;
+                        }
                     }
 
                     // Edit Textures
@@ -160,8 +228,38 @@ namespace SigmaReplacements
 
                     // Edit Physical Parameters
                     info.scale = info.scale ?? Vector3.one;
-                    float mult = (float)((cb?.Radius ?? 200000) / 200000);
-                    info.ApplyTo(body, 0.209560245275497f * mult);
+                    info.ApplyTo(body, 0.209560245275497f);
+
+                    // Add Colliders
+                    if (info.addColliders)
+                    {
+                        body.layer = 15;
+                        if (body.GetComponent<Collider>() == null)
+                        {
+                            MeshCollider collider = body.AddComponent<MeshCollider>();
+                            collider.isTrigger = true;
+                        }
+                    }
+
+                    // Add Lights
+                    for (int l = 0; l < info.lights?.Length; l++)
+                    {
+                        ConfigNode node = info.lights[l];
+
+                        MenuLight menuLight = new MenuLight(node);
+
+                        GameObject lightObj = GetLight(menuLight, scene);
+
+                        if (!lightTemplates.ContainsKey(lightObj.name))
+                        {
+                            lightObj.transform.SetParent(body.transform);
+                            lightObj.transform.localPosition = Vector3.zero;
+                            lightObj.transform.localRotation = Quaternion.identity;
+                            lightObj.transform.localScale = Vector3.one;
+
+                            menuLight.ApplyTo(lightObj, scene);
+                        }
+                    }
                 }
 
                 // CleanUp
@@ -202,7 +300,8 @@ namespace SigmaReplacements
 
                 if (kerbals == null || kerbals.childCount < 4) return;
 
-                GameObject[] templates = new GameObject[] { Instantiate(kerbals.GetChild(0).gameObject), Instantiate(kerbals.GetChild(1).gameObject), Instantiate(kerbals.GetChild(2).gameObject), Instantiate(kerbals.GetChild(3).gameObject) };
+                GameObject[] templates = GetOrbitKerbals();
+                GameObject[] munTemplates = GetMunKerbals();
 
                 if (Debug.debug)
                 {
@@ -212,8 +311,7 @@ namespace SigmaReplacements
                         Debug.Log("EditKerbals", "template[" + i + "] rotation = " + (Vector3d)templates[i].transform.eulerAngles);
                         Debug.Log("EditKerbals", "template[" + i + "] scale = " + (Vector3d)templates[i].transform.localScale);
 
-                        Bobber bobber = templates[i].GetComponent<Bobber>();
-                        if (bobber != null)
+                        if (templates[i].GetComponent<Bobber>() is Bobber bobber)
                         {
                             Debug.Log("EditKerbals", "template[" + i + "] bobberSeed = " + (double)bobber.seed);
                             Debug.Log("EditKerbals", "template[" + i + "] bobberOFS = " + (Vector3d)(new Vector3(bobber.ofs1, bobber.ofs2, bobber.ofs3)));
@@ -233,11 +331,26 @@ namespace SigmaReplacements
                         kerbal.SetActive(info[i].enabled);
                         if (!info[i].enabled) continue;
                     }
-                    else if (info[i].enabled && info[i].template >= 0 && info[i].template <= 3)
+                    else if (info[i].enabled)
                     {
                         if (string.IsNullOrEmpty(info[i].name)) continue;
 
-                        kerbal = Instantiate(templates[(int)info[i].template]);
+                        int? template = info[i].template;
+
+                        if (template >= 0 && template <= 3)
+                        {
+                            kerbal = Instantiate(templates[template.Value]);
+                        }
+                        else if (template >= -2 && template <= -1)
+                        {
+                            kerbal = Instantiate(munTemplates[-template.Value - 1]);
+                            kerbal.transform.SetParent(templates[0].transform.parent);
+                        }
+                        else
+                        {
+                            continue;
+                        }
+
                         kerbal.name = info[i].name;
                     }
                     else
@@ -248,11 +361,24 @@ namespace SigmaReplacements
                     // Apply Physical Parameters
                     info[i].ApplyTo(kerbal);
 
+                    // Remove JetPack
+                    GameObject jetpack = kerbal?.GetChild("jetpack01");
+                    if (jetpack != null && info[i].removeJetpack)
+                    {
+                        jetpack.SetActive(false);
+                    }
+
                     // Remove Helmet
                     GameObject helmet = kerbal.GetChild("helmet01") ?? kerbal.GetChild("mesh_female_kerbalAstronaut01_helmet01");
                     if (helmet != null)
                     {
                         helmet.SetActive(!info[i].removeHelmet);
+                    }
+
+                    // Add Colliders
+                    if (info[i].addColliders)
+                    {
+                        KerbalColliders(kerbal, helmet);
                     }
                 }
 
@@ -260,6 +386,92 @@ namespace SigmaReplacements
                 for (int i = 0; i < 4; i++)
                 {
                     Object.DestroyImmediate(templates[i]);
+                }
+                for (int i = 0; i < 2; i++)
+                {
+                    Object.DestroyImmediate(munTemplates[i]);
+                }
+            }
+
+            void EditLights(MenuLight[] info, GameObject scene)
+            {
+                if (!(info?.Length > 0)) return;
+
+                if (scene == null) return;
+
+                for (int i = 0; i < info?.Length; i++)
+                {
+                    GameObject lightObj = GetLight(info[i], scene);
+
+                    // Apply MenuLight
+                    info[i].ApplyTo(lightObj, scene);
+                }
+            }
+
+            void CleanUpLights()
+            {
+                if (lightTemplates != null)
+                {
+                    // CleanUp
+                    for (int i = 0; i < lightNames.Length; i++)
+                    {
+                        Object.DestroyImmediate(lightTemplates[lightNames[i]]);
+                    }
+
+                    lightTemplates = null;
+                }
+            }
+
+            GameObject GetLight(MenuLight info, GameObject scene)
+            {
+                GameObject lightObj = null;
+
+                if (lightTemplates == null)
+                    GetLightTemplates(scene);
+
+                // Clone or Select Stock Light
+                if (lightTemplates.ContainsKey(info.name))
+                {
+                    lightObj = scene.GetChild(info.name);
+                    lightObj.SetActive(info.enabled);
+                }
+                else if (info.enabled)
+                {
+                    if (!string.IsNullOrEmpty(info.name))
+                    {
+                        if (lightTemplates.ContainsKey(info.template))
+                        {
+                            lightObj = Instantiate(lightTemplates[info.template]);
+                            lightObj.name = info.name;
+                        }
+                    }
+                }
+
+                return lightObj;
+            }
+
+            void GetLightTemplates(GameObject scene)
+            {
+                lightNames = new string[] { "BackLight", "FillLight", "KeyLight", "PlanetLight" };
+
+                lightTemplates = new Dictionary<string, GameObject>
+                {
+                    { lightNames[0], Instantiate(scene.GetChild(lightNames[0])) },
+                    { lightNames[1], Instantiate(scene.GetChild(lightNames[1])) },
+                    { lightNames[2], Instantiate(scene.GetChild(lightNames[2])) },
+                    { lightNames[3], Instantiate(scene.GetChild(lightNames[3])) }
+                };
+
+                if (Debug.debug)
+                {
+                    for (int i = 0; i < lightNames.Length; i++)
+                    {
+                        GameObject light = lightTemplates[lightNames[i]];
+                        Debug.Log("GetLightTemplates", "template[" + i + "] = " + light);
+                        Debug.Log("GetLightTemplates", "    position = " + (Vector3d)light.transform.position);
+                        Debug.Log("GetLightTemplates", "    rotation = " + (Vector3d)light.transform.eulerAngles);
+                        Debug.Log("GetLightTemplates", "    scale = " + (Vector3d)light.transform.localScale);
+                    }
                 }
             }
         }

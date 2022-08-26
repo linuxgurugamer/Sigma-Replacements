@@ -1,10 +1,11 @@
 ﻿using System.IO;
 using UnityEngine;
+using TMPro;
 
 
 namespace SigmaReplacements
 {
-    namespace MenuScenes
+    namespace MenuButtons
     {
         internal class LiveDebug : MonoBehaviour
         {
@@ -103,117 +104,83 @@ namespace SigmaReplacements
 
             void Save()
             {
-                Directory.CreateDirectory("GameData/Sigma/Replacements/MenuScenes/Debug/");
+                Directory.CreateDirectory("GameData/Sigma/Replacements/MenuButtons/Debug/");
 
-                ConfigNode SaveData = new ConfigNode("SaveData");
+                ConfigNode SaveData = new ConfigNode("LiveDebug");
 
                 SaveData.AddValue("enabled", debug);
-                SaveData.AddValue("moveby", moveby);
-                SaveData.AddValue("rotateby", rotateby);
-                SaveData.AddValue("scaleby", scaleby);
                 SaveData.AddValue("position", transform.position);
                 SaveData.AddValue("rotation", transform.localEulerAngles);
                 SaveData.AddValue("scale", transform.localScale);
+                SaveData.AddValue("moveby", moveby);
+                SaveData.AddValue("rotateby", rotateby);
+                SaveData.AddValue("scaleby", scaleby);
 
-                if (GetComponent<FlareCamera>() is FlareCamera flare)
+                TextMeshPro mesh = GetComponent<TextMeshPro>();
+
+                if (mesh != null)
                 {
-                    SaveData.AddValue("brightness", flare.maxBrightness);
+                    SaveData.AddValue("text", mesh.text);
+                    SaveData.AddValue("font", mesh.font.name);
+                    SaveData.AddValue("fontSize", mesh.fontSize);
+                    SaveData.AddValue("borderSize", mesh.outlineWidth);
+                    SaveData.AddValue("borderColor", (Color)mesh.outlineColor);
+                    SaveData.AddValue("normalColor", mesh.color);
                 }
 
-                if (GetComponent<Bobber>() is Bobber bobber)
+                TextProButton3D button = GetComponent<TextProButton3D>();
+
+                if (button != null)
                 {
-                    float[] values = new float[] { bobber.seed, bobber.ofs1, bobber.ofs2, bobber.ofs3 };
-
-                    DestroyImmediate(bobber);
-
-                    bobber = gameObject.AddComponent<Bobber>();
-                    bobber.seed = values[0];
-                    bobber.ofs1 = values[1];
-                    bobber.ofs2 = values[2];
-                    bobber.ofs3 = values[3];
-
-                    SaveData.AddValue("bobberSeed", bobber.seed);
-                    SaveData.AddValue("bobberOFS", new Vector3(bobber.ofs1, bobber.ofs2, bobber.ofs3));
+                    SaveData.RemoveValue("normalColor");
+                    SaveData.AddValue("normalColor", button.normalColor);
+                    SaveData.AddValue("hoverColor", button.hoverColor);
+                    SaveData.AddValue("downColor", button.downColor);
+                    SaveData.AddValue("disabledColor", button.disabledColor);
                 }
 
-                if (GetComponent<Rotato>() is Rotato rotato)
-                {
-                    SaveData.AddValue("rotatoSpeed", rotato.speed);
-                }
-
-                if (GetComponent<Light>() is Light light)
-                {
-                    ConfigNode LightNode = new ConfigNode("LIGHT");
-
-                    LightNode.AddValue("color", light.color);
-                    LightNode.AddValue("colorTemperature", light.colorTemperature);
-                    LightNode.AddValue("intensity", light.intensity);
-                    LightNode.AddValue("bounceIntensity", light.bounceIntensity);
-                    LightNode.AddValue("range", light.range);
-                    LightNode.AddValue("spotAngle", light.spotAngle);
-                    LightNode.AddValue("shadowStrength", light.shadowStrength);
-                    LightNode.AddValue("track", light.gameObject.GetComponent<LightTracker>()?.enabled == true);
-
-                    SaveData.AddNode(LightNode);
-                }
-
-                SaveData.Save("GameData/Sigma/Replacements/MenuScenes/Debug/" + name + index + ".txt");
+                SaveData.Save("GameData/Sigma/Replacements/MenuButtons/Debug/" + name + index + ".txt");
             }
 
             void Load()
             {
-                string path = "GameData/Sigma/Replacements/MenuScenes/Debug/";
+                string path = "GameData/Sigma/Replacements/MenuButtons/Debug/";
 
                 if (Directory.Exists(path))
                 {
-                    path += name + index + ".txt";
-
-                    if (File.Exists(path))
+                    if (File.Exists(path + name + index + ".txt"))
                     {
-                        ConfigNode LoadData = ConfigNode.Load(path);
+                        ConfigNode LoadData = ConfigNode.Load(path + name + index + ".txt");
 
                         if (bool.TryParse(LoadData.GetValue("enabled"), out debug) && debug)
                         {
-                            moveby = float.Parse(LoadData.GetValue("moveby"));
-                            rotateby = float.Parse(LoadData.GetValue("rotateby"));
-                            scaleby = float.Parse(LoadData.GetValue("scaleby"));
                             transform.position = ConfigNode.ParseVector3(LoadData.GetValue("position"));
                             transform.localEulerAngles = ConfigNode.ParseVector3(LoadData.GetValue("rotation"));
                             transform.localScale = ConfigNode.ParseVector3(LoadData.GetValue("scale"));
+                            moveby = float.Parse(LoadData.GetValue("moveby"));
+                            rotateby = float.Parse(LoadData.GetValue("rotateby"));
+                            scaleby = float.Parse(LoadData.GetValue("scaleby"));
 
-                            if (GetComponent<FlareCamera>() is FlareCamera flare)
+                            TextMeshPro mesh = GetComponent<TextMeshPro>();
+
+                            if (mesh != null)
                             {
-                                flare.maxBrightness = float.Parse(LoadData.GetValue("brightness"));
+                                mesh.text = LoadData.GetValue("text");
+                                mesh.font.name = LoadData.GetValue("font");
+                                mesh.fontSize = float.Parse(LoadData.GetValue("fontSize"));
+                                mesh.outlineWidth = float.Parse(LoadData.GetValue("borderSize"));
+                                mesh.outlineColor = ConfigNode.ParseColor(LoadData.GetValue("borderColor"));
+                                mesh.color = ConfigNode.ParseColor(LoadData.GetValue("normalColor"));
                             }
 
-                            if (GetComponent<Bobber>() is Bobber bobber)
-                            {
-                                Vector3 bobberOFS = ConfigNode.ParseVector3(LoadData.GetValue("bobberOFS"));
+                            TextProButton3D button = GetComponent<TextProButton3D>();
 
-                                bobber.enabled = false;
-                                bobber.ofs1 = bobberOFS.x;
-                                bobber.ofs2 = bobberOFS.y;
-                                bobber.ofs3 = bobberOFS.z;
-                            }
-
-                            if (GetComponent<Rotato>() is Rotato rotato)
+                            if (button != null)
                             {
-                                rotato.speed = float.Parse(LoadData.GetValue("rotatoSpeed"));
-                            }
-
-                            if (LoadData.GetNode("LIGHT") is ConfigNode LightNode)
-                            {
-                                if (GetComponent<Light>() is Light light)
-                                {
-                                    light.color = ConfigNode.ParseColor(LightNode.GetValue("color"));
-                                    light.colorTemperature = float.Parse(LightNode.GetValue("colorTemperature"));
-                                    light.intensity = float.Parse(LightNode.GetValue("intensity"));
-                                    light.bounceIntensity = float.Parse(LightNode.GetValue("bounceIntensity"));
-                                    light.range = float.Parse(LightNode.GetValue("range"));
-                                    light.spotAngle = float.Parse(LightNode.GetValue("spotAngle"));
-                                    light.shadowStrength = float.Parse(LightNode.GetValue("shadowStrength"));
-                                    light.gameObject.AddOrGetComponent<LightTracker>().enabled = bool.Parse(LightNode.GetValue("trackCamera"));
-                                }
+                                button.normalColor = ConfigNode.ParseColor(LoadData.GetValue("normalColor"));
+                                button.hoverColor = ConfigNode.ParseColor(LoadData.GetValue("hoverColor"));
+                                button.downColor = ConfigNode.ParseColor(LoadData.GetValue("downColor"));
+                                button.disabledColor = ConfigNode.ParseColor(LoadData.GetValue("disabledColor"));
                             }
                         }
                     }
@@ -227,11 +194,6 @@ namespace SigmaReplacements
                     transform.position = originalPosition;
                     transform.localRotation = originalRotation;
                     transform.localScale = originalScale;
-
-                    if (transform.GetComponent<Bobber>() is Bobber bobber)
-                    {
-                        bobber.enabled = false;
-                    }
                 }
             }
         }

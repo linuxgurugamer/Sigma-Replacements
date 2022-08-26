@@ -8,7 +8,7 @@ namespace SigmaReplacements
         internal class MunSceneInfo : MenuSceneInfo
         {
             // Static
-            internal static List<MenuSceneInfo> DataBase = new List<MenuSceneInfo>();
+            internal static List<MenuSceneInfo> DataBase = null;
 
             // Sky
             internal ConfigNode atmosphere = null;
@@ -26,6 +26,9 @@ namespace SigmaReplacements
 
             // Kerbals
             internal ConfigNode[] kerbals = null;
+
+            // Lights
+            internal ConfigNode[] lights = null;
 
             // New MenuScenesInfo From Config
             internal MunSceneInfo(ConfigNode info)
@@ -59,6 +62,9 @@ namespace SigmaReplacements
 
                 // Kerbals
                 kerbals = info?.GetNode("KERBALS")?.GetNodes("KERBAL");
+
+                // Lights
+                lights = info?.GetNode("LIGHTS")?.GetNodes("LIGHT");
             }
 
             // New MenuScenesInfo From Name

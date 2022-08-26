@@ -28,6 +28,11 @@ namespace SigmaReplacements
             // Kerbals
             MenuObject[] kerbals = null;
 
+            // Lights
+            MenuLight[] lights = null;
+            static string[] lightNames = null;
+            static Dictionary<string, GameObject> lightTemplates = null;
+
             internal CustomMunScene(MunSceneInfo info)
             {
                 // Sky
@@ -52,6 +57,9 @@ namespace SigmaReplacements
 
                 // Kerbals
                 kerbals = Parse(info.kerbals, kerbals);
+
+                // Lights
+                lights = Parse(info.lights, lights);
             }
 
             internal void ApplyTo(GameObject scene)
@@ -73,6 +81,10 @@ namespace SigmaReplacements
 
                 // Kerbals
                 EditKerbals(kerbals, scene);
+
+                // Lights
+                EditLights(lights, scene);
+                CleanUpLights();
             }
 
             void AddAtmosphere(MenuObject info, GameObject scene)
@@ -135,18 +147,18 @@ namespace SigmaReplacements
                     GameObject body;
 
                     // Clone or Select Stock Body
-                    if (i > 0 && info.enabled)
+                    if (info.name == "Kerbin")
+                    {
+                        body = kerbin;
+                        body.SetActive(info.enabled);
+                        if (!info.enabled) continue;
+                    }
+                    else if (info.enabled)
                     {
                         if (string.IsNullOrEmpty(info.name)) continue;
 
                         body = Instantiate(clone);
                         body.name = "NewBody_" + info.name;
-                    }
-                    else if (i == 0)
-                    {
-                        body = kerbin;
-                        body.SetActive(info.enabled);
-                        if (!info.enabled) continue;
                     }
                     else
                     {
@@ -161,6 +173,10 @@ namespace SigmaReplacements
 
                     if (template != null)
                     {
+                        // OnDemand
+                        if (KopernicusFixer.detect)
+                            OnDemandFixer.LoadTextures(template);
+
                         // Material
                         renderer.material = template?.GetComponent<Renderer>()?.material ?? renderer.material;
                         renderer.material.SetTexture(info.texture1);
@@ -170,18 +186,48 @@ namespace SigmaReplacements
                         // Mesh
                         MeshFilter meshFilter = body.GetComponent<MeshFilter>();
                         meshFilter.mesh = template?.GetComponent<MeshFilter>()?.mesh ?? meshFilter.mesh;
+
+                        // Coronas
+                        info.AddCoronas(body, template);
+
+                        // Flare
+                        if (info.brightness != 0 || Debug.debug)
+                        {
+                            FlareFixer flare = body.AddComponent<FlareFixer>();
+                            flare.template = cb;
+                            flare.info = info;
+                        }
                     }
 
                     // Edit Physical Parameters
                     info.scale = info.scale ?? Vector3.one;
-                    float mult = (float)((cb?.Radius ?? 600000) / 600000);
-                    info.ApplyTo(body, 0.188336193561554f * mult);
+                    info.ApplyTo(body, 0.188336193561554f);
 
                     // Add Atmospheric Haze
                     if (haze != null)
                     {
                         renderer.materials = new Material[] { renderer.material, new Material(Shader.Find("KSP/Scenery/Unlit/Transparent")) };
                         renderer.materials[1].color = (Color)haze;
+                    }
+
+                    // Add Lights
+                    for (int l = 0; l < info.lights?.Length; l++)
+                    {
+                        ConfigNode node = info.lights[l];
+
+                        MenuLight menuLight = new MenuLight(node);
+
+                        GameObject lightObj = GetLight(menuLight, scene);
+
+                        if (!lightTemplates.ContainsKey(lightObj.name))
+                        {
+                            lightObj.transform.SetParent(body.transform);
+                            lightObj.transform.localPosition = Vector3.zero;
+                            lightObj.transform.localRotation = Quaternion.identity;
+                            lightObj.transform.localScale = Vector3.one;
+
+                            menuLight.ApplyTo(lightObj, scene);
+                        }
                     }
 
                     // CleanUp
@@ -194,23 +240,63 @@ namespace SigmaReplacements
                 if (info == null) return;
 
                 // Select Terrain
-                Terrain terrain = scene.GetChild("Terrain").GetComponent<Terrain>();
-                TerrainLayer[] layers = terrain.terrainData.terrainLayers;
+                Terrain[] terrains = scene?.GetComponentsInChildren<Terrain>(true);
 
-                // Change Terrain Textures
-                if (info.texture1 != null)
-                    layers[0].diffuseTexture = (Texture2D)info.texture1;
-                if (info.texture2 != null)
-                    layers[1].diffuseTexture = (Texture2D)info.texture2;
+                for (int i = 0; i < terrains?.Length; i++)
+                {
+                    Terrain terrain = terrains[i];
 
-                // Change Terrain Normals
-                if (info.normal1 != null)
-                    layers[0].normalMapTexture = (Texture2D)info.normal1;
-                if (info.normal2 != null)
-                    layers[1].normalMapTexture = (Texture2D)info.normal2;
+                    TerrainLayer[] layers = terrain?.terrainData?.terrainLayers;
 
-                // Save Terrain Changes
-                terrain.terrainData.terrainLayers = layers;
+                    // Apply Texture1
+                    if (info.texture1 != null)
+                    {
+                        if (layers?.Length > 0)
+                            layers[0].diffuseTexture = (Texture2D)info.texture1;
+                        if (layers?.Length > 2)
+                            layers[1].diffuseTexture = (Texture2D)info.texture1;
+                    }
+
+                    // Apply Normal1
+                    if (info.normal1 != null)
+                    {
+                        if (layers?.Length > 0)
+                            layers[0].normalMapTexture = (Texture2D)info.normal1;
+                        if (layers?.Length > 2)
+                            layers[1].normalMapTexture = (Texture2D)info.normal1;
+                    }
+
+                    // Apply Texture2
+                    if (info.texture2 != null)
+                    {
+                        if (layers?.Length == 2)
+                            layers[1].diffuseTexture = (Texture2D)info.texture2;
+                        if (layers?.Length > 3)
+                            layers[2].diffuseTexture = layers[3].diffuseTexture = (Texture2D)info.texture2;
+                        if (layers?.Length > 4)
+                            layers[4].diffuseTexture = (Texture2D)info.texture2;
+                    }
+
+                    // Apply Normal2
+                    if (info.normal2 != null)
+                    {
+                        if (layers?.Length == 2)
+                            layers[1].normalMapTexture = (Texture2D)info.normal2;
+                        if (layers?.Length > 3)
+                            layers[2].normalMapTexture = layers[3].normalMapTexture = (Texture2D)info.normal2;
+                        if (layers?.Length > 4)
+                            layers[4].normalMapTexture = (Texture2D)info.normal2;
+                    }
+
+                    // Save Terrain Changes
+                    terrain.terrainData.terrainLayers = layers;
+
+                    // AddColliders
+                    if (info.addColliders)
+                    {
+                        terrain.gameObject.layer = 15;
+                    }
+                }
             }
 
             void EditBoulders(MenuObject[] info, GameObject scene)
@@ -228,7 +314,7 @@ namespace SigmaReplacements
                     }
                 }
 
-                for (int i = 0; i < info.Length; i++)
+                for (int i = 0; i < info?.Length; i++)
                 {
                     if (info[i].index >= boulders.Length) continue;
 
@@ -239,7 +325,7 @@ namespace SigmaReplacements
                         if (!boulders[j].gameObject.activeSelf) continue;
 
                         // Debug
-                        if (info[i].debug) boulders[j].gameObject.AddOrGetComponent<LiveDebug>();
+                        if (Debug.debug) boulders[j].gameObject.AddOrGetComponent<LiveDebug>().index = j;
 
                         // Edit Body Position/Rotation/Scale
                         boulders[j].position += info[i].position ?? Vector3.zero;
@@ -248,7 +334,7 @@ namespace SigmaReplacements
 
                         // Adjust Scale by Distance
                         if (info[i].adjustScale)
-                            boulders[j].transform.localScale *= (0.25f + (new Vector3(0.7814472f, -0.7841411f, 2.28511f) - boulders[j].transform.position).magnitude / 100);
+                            boulders[j].transform.localScale *= (0.5f + (new Vector3(0.7814472f, -0.7841411f, 2.28511f) - boulders[j].transform.position).magnitude / 100);
 
                         // Edit Appearances
                         Renderer renderer = boulders[j].GetComponent<Renderer>();
@@ -268,7 +354,7 @@ namespace SigmaReplacements
             void AddScatter(MenuObject[] scatters, GameObject scene)
             {
                 int? sandcastle = null;
-                GameObject template = scene.GetChild("sandcastle");
+                GameObject template = scene.GetChild("sandcastle") ?? scene.GetChild("sandcastle_v2_Medium") ?? scene.GetChild("sandcastle_v2_low");
                 Debug.Log("AddScatter", "template position = " + (Vector3d)template.transform.position);
                 Debug.Log("AddScatter", "template rotation = " + (Vector3d)template.transform.eulerAngles);
                 Debug.Log("AddScatter", "template scale = " + (Vector3d)template.transform.localScale);
@@ -323,7 +409,7 @@ namespace SigmaReplacements
                 wreck.transform.rotation = info.rotation ?? wreck.transform.rotation;
                 wreck.transform.localScale = info.scale ?? wreck.transform.localScale;
 
-                if (info.debug) wreck.AddComponent<LiveDebug>();
+                if (Debug.debug) wreck.AddComponent<LiveDebug>();
             }
 
             void EditGround(MenuObject info, GameObject scene)
@@ -362,31 +448,53 @@ namespace SigmaReplacements
                 // Get Stock Kerbal
                 Transform kerbals = scene?.GetChild("Kerbals")?.transform;
 
-                if (kerbals == null || kerbals.childCount != 1) return;
+                if (kerbals == null || kerbals.childCount < 1) return;
 
-                GameObject template = Instantiate(kerbals.GetChild(0).gameObject);
+                GameObject[] templates = GetMunKerbals();
+                GameObject[] orbitTemplates = GetOrbitKerbals();
 
-                Debug.Log("EditKerbals", "template position = " + (Vector3d)template.transform.position);
-                Debug.Log("EditKerbals", "template rotation = " + (Vector3d)template.transform.eulerAngles);
-                Debug.Log("EditKerbals", "template scale = " + (Vector3d)template.transform.localScale);
+                if (Debug.debug)
+                {
+                    for (int i = 0; i < 2; i++)
+                    {
+                        Debug.Log("EditKerbals", "template[" + i + "] position = " + (Vector3d)templates[i].transform.position);
+                        Debug.Log("EditKerbals", "template[" + i + "] rotation = " + (Vector3d)templates[i].transform.eulerAngles);
+                        Debug.Log("EditKerbals", "template[" + i + "] scale = " + (Vector3d)templates[i].transform.localScale);
+                    }
+                }
 
                 for (int i = 0; i < info?.Length; i++)
                 {
                     GameObject kerbal;
 
                     // Clone or Select Stock newGuy
-                    if (i > 0 && info[i].enabled)
-                    {
-                        if (string.IsNullOrEmpty(info[i].name)) continue;
-
-                        kerbal = Instantiate(template);
-                        kerbal.name = info[i].name;
-                    }
-                    else if (i == 0)
+                    if (info[i].index == 0)
                     {
                         kerbal = kerbals.GetChild(0).gameObject;
                         kerbal.SetActive(info[i].enabled);
                         if (!info[i].enabled) continue;
+                    }
+                    else if (info[i].enabled)
+                    {
+                        if (string.IsNullOrEmpty(info[i].name)) continue;
+
+                        int? template = info[i].template;
+
+                        if (template >= 0 && template <= 1)
+                        {
+                            kerbal = Instantiate(templates[template.Value]);
+                        }
+                        else if (template >= -4 && template <= -1)
+                        {
+                            kerbal = Instantiate(orbitTemplates[-template.Value - 1]);
+                            kerbal.transform.SetParent(templates[0].transform.parent);
+                        }
+                        else
+                        {
+                            continue;
+                        }
+
+                        kerbal.name = info[i].name;
                     }
                     else
                     {
@@ -396,23 +504,136 @@ namespace SigmaReplacements
                     // Apply Physical Parameters
                     info[i].ApplyTo(kerbal);
 
-                    // Remove Helmet
-                    GameObject helmet = kerbal?.GetChild("helmet01");
-                    if (helmet != null)
+                    // Remove JetPack
+                    GameObject jetpack = kerbal?.GetChild("jetpack01");
+                    if (jetpack != null && info[i].removeJetpack)
                     {
-                        helmet.SetActive(!info[i].removeHelmet);
+                        jetpack.SetActive(false);
+                    }
+
+                    // Remove Helmet
+                    GameObject helmet = kerbal?.GetChild("helmet01") ?? kerbal?.GetChild("mesh_female_kerbalAstronaut01_helmet01");
+                    if (helmet != null && info[i].removeHelmet)
+                    {
+                        helmet.SetActive(false);
+
+                        MenuRandomKerbalAnims mrka = kerbal.GetComponent<MenuRandomKerbalAnims>();
+                        if (mrka != null)
+                        {
+                            List<string> list = mrka.anims.ToList();
+                            if (list.Remove("idle_c"))
+                            {
+                                mrka.anims = list.ToArray();
+                            }
+                        }
+                    }
+
+                    // Add Colliders
+                    if (info[i].addColliders)
+                    {
+                        KerbalColliders(kerbal, helmet);
                     }
                 }
 
                 // CleanUp
-                Object.Destroy(template);
+                for (int i = 0; i < 2; i++)
+                {
+                    Object.DestroyImmediate(templates[i]);
+                }
+                for (int i = 0; i < 4; i++)
+                {
+                    Object.DestroyImmediate(orbitTemplates[i]);
+                }
+            }
+
+            void EditLights(MenuLight[] info, GameObject scene)
+            {
+                if (!(info?.Length > 0)) return;
+
+                if (scene == null) return;
+
+                for (int i = 0; i < info?.Length; i++)
+                {
+                    GameObject lightObj = GetLight(info[i], scene);
+
+                    // Apply MenuLight
+                    info[i].ApplyTo(lightObj, scene);
+                }
+            }
+
+            void CleanUpLights()
+            {
+                if (lightTemplates != null)
+                {
+                    // CleanUp
+                    for (int i = 0; i < lightNames.Length; i++)
+                    {
+                        Object.DestroyImmediate(lightTemplates[lightNames[i]]);
+                    }
+
+                    lightTemplates = null;
+                }
+            }
+
+            GameObject GetLight(MenuLight info, GameObject scene)
+            {
+                GameObject lightObj = null;
+
+                if (lightTemplates == null)
+                    GetLightTemplates(scene);
+
+                // Clone or Select Stock Light
+                if (lightTemplates.ContainsKey(info.name))
+                {
+                    lightObj = scene.GetChild(info.name);
+                    lightObj.SetActive(info.enabled);
+                }
+                else if (info.enabled)
+                {
+                    if (!string.IsNullOrEmpty(info.name))
+                    {
+                        if (lightTemplates.ContainsKey(info.template))
+                        {
+                            lightObj = Instantiate(lightTemplates[info.template]);
+                            lightObj.name = info.name;
+                        }
+                    }
+                }
+
+                return lightObj;
+            }
+
+            void GetLightTemplates(GameObject scene)
+            {
+                lightNames = new string[] { "BackLight", "Directional light", "FillLight", "KeyLight" };
+
+                lightTemplates = new Dictionary<string, GameObject>
+                {
+                    { lightNames[0], Instantiate(scene.GetChild(lightNames[0])) },
+                    { lightNames[1], Instantiate(scene.GetChild(lightNames[1])) },
+                    { lightNames[2], Instantiate(scene.GetChild(lightNames[2])) },
+                    { lightNames[3], Instantiate(scene.GetChild(lightNames[3])) }
+                };
+
+                if (Debug.debug)
+                {
+                    for (int i = 0; i < lightNames.Length; i++)
+                    {
+                        GameObject light = lightTemplates[lightNames[i]];
+                        Debug.Log("GetLightTemplates", "template[" + i + "] = " + light);
+                        Debug.Log("GetLightTemplates", "    position = " + (Vector3d)light.transform.position);
+                        Debug.Log("GetLightTemplates", "    rotation = " + (Vector3d)light.transform.eulerAngles);
+                        Debug.Log("GetLightTemplates", "    scale = " + (Vector3d)light.transform.localScale);
+                    }
+                }
             }
 
             MenuObject[] ParseBoulders(ConfigNode[] input)
             {
                 if (input == null) return null;
 
-                MenuObject[] data = Parse(input, null);
+                MenuObject[] data = null;
+                data = Parse(input, data);
 
                 List<MenuObject> output = data.Where(i => i.name == "boulder" && i.index == null).ToList();
                 output.AddRange(data.Where(i => i.name == "boulder" && i.index != null).OrderBy(i => i.index));
